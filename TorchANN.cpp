@@ -22,7 +22,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
 
-#ifdef __PLUMED_HAS_TORCH
 #include "function/Function.h"
 #include "function/ActionRegister.h"
 #include "cassert"
@@ -49,7 +48,7 @@ namespace torchfunc {
 /*
 Calculates the Torch ANN-function.
 
-This module implements Torch ANN class, which is a subclass of Function class.
+This module implements Torch artifical neural network (ANN) class, which is a subclass of Function class.
 
 \par Examples
 
@@ -57,8 +56,8 @@ The corresponding Torch ANN function object can be defined using
 following plumed script:
 
 \plumedfile
-TorchANN ...
-LABEL=torchann
+TORCHANN ...
+LABEL=TORCHANN
 ARG=l_0_out_0,l_0_out_1
 NUM_LAYERS=3
 NUM_NODES=2,3,1
@@ -67,16 +66,16 @@ WEIGHTS0=1,2,3,4,5,6
 WEIGHTS1=7,8,9
 BIASES0=10,11,12
 BIASES1=13
-... TorchANN
+... TORCHANN
 \endplumedfile
 
-To access its components, we use "torchann.node-0", "torchann.node-1", ..., which represents the components of neural network outputs.
+To access its components, we use "TORCHANN.node-0", "TORCHANN.node-1", ..., which represents the components of neural network outputs.
 
 
 */
 //+ENDPLUMEDOC
 
-class TorchANN : public Function
+class TORCHANN : public Function
 {
 private:
   int num_layers;
@@ -90,15 +89,15 @@ private:
 
 public:
   static void registerKeywords( Keywords& keys );
-  explicit TorchANN(const ActionOptions&);
+  explicit TORCHANN(const ActionOptions&);
   virtual void calculate();
   void calculate_output_of_each_layer(const vector<double>& input);
   void back_prop(vector<vector<double> >& derivatives_of_each_layer, int index_of_output_component);
 };
 
-PLUMED_REGISTER_ACTION(TorchANN,"TorchANN")
+PLUMED_REGISTER_ACTION(TORCHANN,"TORCHANN")
 
-void TOrchANN::registerKeywords( Keywords& keys ) {
+void TORCHANN::registerKeywords( Keywords& keys ) {
   Function::registerKeywords(keys);
   keys.use("ARG"); keys.use("PERIODIC");
   keys.add("compulsory", "NUM_LAYERS", "number of layers of the neural network");
@@ -113,7 +112,7 @@ void TOrchANN::registerKeywords( Keywords& keys ) {
   keys.addOutputComponent("node", "default", "components of Torch ANN outputs");
 }
 
-TorchANN::TorchANN(const ActionOptions&ao):
+TORCHANN::TORCHANN(const ActionOptions&ao):
   Action(ao),
   Function(ao)
 {
@@ -202,7 +201,7 @@ TorchANN::TorchANN(const ActionOptions&ao):
   checkRead();
 }
 
-void TorchANN::calculate_output_of_each_layer(const vector<double>& input) {
+void TORCHANN::calculate_output_of_each_layer(const vector<double>& input) {
   // first layer
   output_of_each_layer[0] = input;
   // following layers
@@ -264,7 +263,7 @@ void TorchANN::calculate_output_of_each_layer(const vector<double>& input) {
   return;
 }
 
-void TorchANN::back_prop(vector<vector<double> >& derivatives_of_each_layer, int index_of_output_component) {
+void TORCHANN::back_prop(vector<vector<double> >& derivatives_of_each_layer, int index_of_output_component) {
   derivatives_of_each_layer = output_of_each_layer;  // the data structure and size should be the same, so I simply deep copy it
   // first calculate derivatives for bottleneck layer
   for (int ii = 0; ii < num_nodes[num_nodes.size() - 1]; ii ++ ) {
@@ -355,7 +354,7 @@ void TorchANN::back_prop(vector<vector<double> >& derivatives_of_each_layer, int
   return;
 }
 
-void TorchANN::calculate() {
+void TORCHANN::calculate() {
 
   vector<double> input_layer_data(num_nodes[0]);
   for (int ii = 0; ii < num_nodes[0]; ii ++) {
@@ -388,5 +387,4 @@ void TorchANN::calculate() {
 }
 }
 
-#endif
 
