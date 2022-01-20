@@ -51,20 +51,13 @@ The corresponding Torch ANN function object can be defined using following plume
 
 \plumedfile
 TORCHANN ...
-LABEL=TORCHANN
+LABEL=TORCHANNFUNC
 MODULE_FILE=file
-ARG=l_0_out_0,l_0_out_1
-NUM_LAYERS=3
-NUM_NODES=2,3,1
-ACTIVATIONS=Tanh,Tanh
-WEIGHTS0=1,2,3,4,5,6
-WEIGHTS1=7,8,9
-BIASES0=10,11,12
-BIASES1=13
-... TORCHANN
+ARG=t0,t1
+... TORCHANNFUNC
 \endplumedfile
 
-To access its components, we use "TORCHANN.node-0", "TORCHANN.node-1", ..., which represents the components of neural network outputs.
+To access the components of outputs, use "TORCHANN.output-0", "TORCHANN.output-1", and so on.
 
 */
 //+ENDPLUMEDOC
@@ -72,41 +65,27 @@ To access its components, we use "TORCHANN.node-0", "TORCHANN.node-1", ..., whic
 class TorchANNFunc : public Function
 {
 private:
-  int num_layers;
-  vector<int> num_nodes;
-  vector<string> activations;   // activation functions
-  vector<vector<double> > weights;  // flattened weight arrays
-  vector<vector<double> > biases;
-  vector<vector<double> > output_of_each_layer;
-  vector<vector<double> > input_of_each_layer;
-  vector<double** > coeff;  // weight matrix arrays, reshaped from "weights"
   torch::jit::script::Module module;
   string file;
+  int num_args ;
+  int num_outputs;
 
 public:
   static void registerKeywords( Keywords& keys );
   explicit TorchANNFunc(const ActionOptions&);
   void calculate();
-  void calculate_output_of_each_layer(const vector<double>& input);
-  void back_prop(vector<vector<double> >& derivatives_of_each_layer, int index_of_output_component);
 };
 
-PLUMED_REGISTER_ACTION(TorchANNFunc,"TorchANNFunc")
+PLUMED_REGISTER_ACTION(TorchANNFunc,"TORCHANNFUNC")
 
 void TorchANNFunc::registerKeywords( Keywords& keys ) {
   Function::registerKeywords(keys);
-  keys.use("ARG"); keys.use("PERIODIC");
+  keys.use("ARG"); 
+  keys.use("PERIODIC");
   keys.add("compulsory", "MODULE_FILE", "file which stores a pytorch compute graph");
-  keys.add("compulsory", "NUM_LAYERS", "number of layers of the neural network");
-  keys.add("compulsory", "NUM_NODES", "numbers of nodes in each layer of the neural network");
-  keys.add("compulsory", "ACTIVATIONS", "activation functions for the neural network");
-  keys.add("numbered", "WEIGHTS", "flattened weight arrays connecting adjacent layers, "
-           "WEIGHTS0 represents flattened weight array connecting layer 0 and layer 1, "
-           "WEIGHTS1 represents flattened weight array connecting layer 1 and layer 2, ...");
-  keys.add("numbered", "BIASES", "bias array for each layer of the neural network, "
-           "BIASES0 represents bias array for layer 1, BIASES1 represents bias array for layer 2, ...");
+  keys.add("compulsory", "NUM_OUTPUT", "number of components of Torch ANN outputs");
   // since v2.2 plumed requires all components be registered
-  keys.addOutputComponent("node", "default", "components of Torch ANN outputs");
+  keys.addOutputComponent("output", "default", "components of Torch ANN outputs");
 }
 
 TorchANNFunc::TorchANNFunc(const ActionOptions&ao):
@@ -115,248 +94,47 @@ TorchANNFunc::TorchANNFunc(const ActionOptions&ao):
 {
   parse("MODULE_FILE", file);
   module = torch::jit::load(file);
-  log.printf("MODULE_FILE =%s", file.c_str());
 
-  parse("NUM_LAYERS", num_layers);
-  num_nodes = vector<int>(num_layers);
-  activations = vector<string>(num_layers - 1);
-  output_of_each_layer = vector<vector<double> >(num_layers);
-  input_of_each_layer = vector<vector<double> >(num_layers);
-  coeff = vector<double** >(num_layers - 1);
-  parseVector("NUM_NODES", num_nodes);
-  parseVector("ACTIVATIONS", activations);
-  log.printf("\nactivations = ");
-  for (auto ss: activations) {
-    log.printf("%s, ", ss.c_str());
-  }
-  log.printf("\nnum_nodes = ");
-  for (auto ss: num_nodes) {
-    log.printf("%d, ", ss);
-  }
-  vector<double> temp_single_coeff, temp_single_bias;
-  for (int ii = 0; ; ii ++) {
-    // parse coeff
-    if( !parseNumberedVector("WEIGHTS", ii, temp_single_coeff) ) {
-      temp_single_coeff=weights[ii-1];
-      break;
-    }
-    weights.push_back(temp_single_coeff);
-    log.printf("size of temp_single_coeff = %lu\n", temp_single_coeff.size());
-    log.printf("size of weights = %lu\n", weights.size());
-    // parse bias
-    if( !parseNumberedVector("BIASES", ii, temp_single_bias) ) {
-      temp_single_bias=biases[ii-1];
-    }
-    biases.push_back(temp_single_bias);
-    log.printf("size of temp_single_bias = %lu\n", temp_single_bias.size());
-    log.printf("size of biases = %lu\n", biases.size());
-  }
+  num_args = getNumberOfArguments() ;
+  parse("NUM_OUTPUT", num_outputs);
 
-  if(getNumberOfArguments() != num_nodes[0]) {
-    error("Number of arguments is wrong");
-  }
-
-  auto temp_coeff = weights;
-  for (int ii = 0; ii < num_layers - 1; ii ++) {
-    int num_of_rows, num_of_cols; // num of rows/cols for the coeff matrix of this connection
-    num_of_rows = num_nodes[ii + 1];
-    num_of_cols = num_nodes[ii];
-    assert (num_of_rows * num_of_cols == temp_coeff[ii].size()); // check whether the size matches
-    // create a 2d array to hold coefficients
-    coeff[ii] = new double*[num_of_rows];
-    for (int kk = 0; kk < num_of_rows; kk ++) {
-      coeff[ii][kk] = new double[num_of_cols];
-    }
-    for (int jj = 0; jj < temp_coeff[ii].size(); jj ++) {
-      coeff[ii][jj / num_of_cols][jj % num_of_cols] = temp_coeff[ii][jj];
-    }
-  }
-  // check coeff
-  for (int ii = 0; ii < num_layers - 1; ii ++) {
-    log.printf("coeff %d = \n", ii);
-    for (int jj = 0; jj < num_nodes[ii + 1]; jj ++) {
-      for (int kk = 0; kk < num_nodes[ii]; kk ++) {
-        log.printf("%f ", coeff[ii][jj][kk]);
-      }
-      log.printf("\n");
-    }
-  }
-  // check bias
-  for (int ii = 0; ii < num_layers - 1; ii ++) {
-    log.printf("bias %d = \n", ii);
-    for (int jj = 0; jj < num_nodes[ii + 1]; jj ++) {
-      log.printf("%f ", biases[ii][jj]);
-    }
-    log.printf("\n");
-  }
-  log.printf("initialization ended\n");
+  log.printf("MODULE_FILE =%s\n", file.c_str());
+  log.printf("Number of args: %d\n", num_args) ;
+  log.printf("NUM_OUTPUT=%d\n", num_outputs) ;
+  log.printf("Initialization ended\n");
   // create components
-  for (int ii = 0; ii < num_nodes[num_layers - 1]; ii ++) {
-    string name_of_this_component = "node-" + to_string(ii);
-    addComponentWithDerivatives(name_of_this_component);
-    componentIsNotPeriodic(name_of_this_component);
+  for (int ii = 0; ii < num_outputs; ii ++) {
+    string name_of_component = "output-" + to_string(ii);
+    addComponentWithDerivatives(name_of_component);
+    componentIsNotPeriodic(name_of_component);
   }
   checkRead();
 }
 
-void TorchANNFunc::calculate_output_of_each_layer(const vector<double>& input) {
-  // first layer
-  output_of_each_layer[0] = input;
-  // following layers
-  for(int ii = 1; ii < num_nodes.size(); ii ++) {
-    output_of_each_layer[ii].resize(num_nodes[ii]);
-    input_of_each_layer[ii].resize(num_nodes[ii]);
-    // first calculate input
-    for (int jj = 0; jj < num_nodes[ii]; jj ++) {
-      input_of_each_layer[ii][jj] = biases[ii - 1][jj];  // add bias term
-      for (int kk = 0; kk < num_nodes[ii - 1]; kk ++) {
-        input_of_each_layer[ii][jj] += coeff[ii - 1][jj][kk] * output_of_each_layer[ii - 1][kk];
-      }
-    }
-    // then get output
-    if (activations[ii - 1] == string("Linear")) {
-      for(int jj = 0; jj < num_nodes[ii]; jj ++) {
-        output_of_each_layer[ii][jj] = input_of_each_layer[ii][jj];
-      }
-    }
-    else if (activations[ii - 1] == string("Tanh")) {
-      for(int jj = 0; jj < num_nodes[ii]; jj ++) {
-        output_of_each_layer[ii][jj] = tanh(input_of_each_layer[ii][jj]);
-      }
-    }
-    else if (activations[ii - 1] == string("Circular")) {
-      assert (num_nodes[ii] % 2 == 0);
-      for(int jj = 0; jj < num_nodes[ii] / 2; jj ++) {
-        double radius = sqrt(input_of_each_layer[ii][2 * jj] * input_of_each_layer[ii][2 * jj]
-                             +input_of_each_layer[ii][2 * jj + 1] * input_of_each_layer[ii][2 * jj + 1]);
-        output_of_each_layer[ii][2 * jj] = input_of_each_layer[ii][2 * jj] / radius;
-        output_of_each_layer[ii][2 * jj + 1] = input_of_each_layer[ii][2 * jj + 1] / radius;
-
-      }
-    }
-    else {
-      printf("layer type not found!\n\n");
-      return;
-    }
-  }
-  return;
-}
-
-void TorchANNFunc::back_prop(vector<vector<double> >& derivatives_of_each_layer, int index_of_output_component) {
-  derivatives_of_each_layer = output_of_each_layer;  // the data structure and size should be the same, so I simply deep copy it
-  // first calculate derivatives for bottleneck layer
-  for (int ii = 0; ii < num_nodes[num_nodes.size() - 1]; ii ++ ) {
-    if (ii == index_of_output_component) {
-      derivatives_of_each_layer[num_nodes.size() - 1][ii] = 1;
-    }
-    else {
-      derivatives_of_each_layer[num_nodes.size() - 1][ii] = 0;
-    }
-  }
-  // the use back propagation to calculate derivatives for previous layers
-  for (int jj = num_nodes.size() - 2; jj >= 0; jj --) {
-    if (activations[jj] == string("Circular")) {
-      vector<double> temp_derivative_of_input_for_this_layer;
-      temp_derivative_of_input_for_this_layer.resize(num_nodes[jj + 1]);
-#ifdef DEBUG
-      assert (num_nodes[jj + 1] % 2 == 0);
-#endif
-      // first calculate the derivative of input from derivative of output of this circular layer
-      for(int ii = 0; ii < num_nodes[jj + 1] / 2; ii ++) {
-        // printf("size of input_of_each_layer[%d] = %d\n",jj,  input_of_each_layer[jj].size());
-        double x_p = input_of_each_layer[jj + 1][2 * ii];
-        double x_q = input_of_each_layer[jj + 1][2 * ii + 1];
-        double radius = sqrt(x_p * x_p + x_q * x_q);
-        temp_derivative_of_input_for_this_layer[2 * ii] = x_q / (radius * radius * radius)
-            * (x_q * derivatives_of_each_layer[jj + 1][2 * ii]
-               - x_p * derivatives_of_each_layer[jj + 1][2 * ii + 1]);
-        temp_derivative_of_input_for_this_layer[2 * ii + 1] = x_p / (radius * radius * radius)
-            * (x_p * derivatives_of_each_layer[jj + 1][2 * ii + 1]
-               - x_q * derivatives_of_each_layer[jj + 1][2 * ii]);
-      }
-#ifdef DEBUG
-      for (int mm = 0; mm < num_nodes[jj + 1]; mm ++) {
-        printf("temp_derivative_of_input_for_this_layer[%d] = %lf\n", mm, temp_derivative_of_input_for_this_layer[mm]);
-        printf("derivatives_of_each_layer[%d + 1][%d] = %lf\n", jj, mm, derivatives_of_each_layer[jj + 1][mm]);
-      }
-#endif
-      // the calculate the derivative of output of layer jj, from derivative of input of layer (jj + 1)
-      for (int mm = 0; mm < num_nodes[jj]; mm ++) {
-        derivatives_of_each_layer[jj][mm] = 0;
-        for (int kk = 0; kk < num_nodes[jj + 1]; kk ++) {
-          derivatives_of_each_layer[jj][mm] += coeff[jj][kk][mm] \
-                                               * temp_derivative_of_input_for_this_layer[kk];
-#ifdef DEBUG
-          printf("derivatives_of_each_layer[%d][%d] = %lf\n", jj, mm, derivatives_of_each_layer[jj][mm]);
-          printf("coeff[%d][%d][%d] = %lf\n", jj, kk, mm, coeff[jj][kk][mm]);
-#endif
-        }
-      }
-      // TODO: should be fine, pass all tests, although there seems to be some problems here previously
-    }
-    else {
-      for (int mm = 0; mm < num_nodes[jj]; mm ++) {
-        derivatives_of_each_layer[jj][mm] = 0;
-        for (int kk = 0; kk < num_nodes[jj + 1]; kk ++) {
-          if (activations[jj] == string("Tanh")) {
-            // printf("tanh\n");
-            derivatives_of_each_layer[jj][mm] += derivatives_of_each_layer[jj + 1][kk] \
-                                                 * coeff[jj][kk][mm] \
-                                                 * (1 - output_of_each_layer[jj + 1][kk] * output_of_each_layer[jj + 1][kk]);
-          }
-          else if (activations[jj] == string("Linear")) {
-            // printf("linear\n");
-            derivatives_of_each_layer[jj][mm] += derivatives_of_each_layer[jj + 1][kk] \
-                                                 * coeff[jj][kk][mm] \
-                                                 * 1;
-          }
-          else {
-            printf("layer type not found!\n\n");
-            return;
-          }
-        }
-      }
-    }
-  }
-#ifdef DEBUG
-  // print out the result for debugging
-  printf("derivatives_of_each_layer = \n");
-  for (int ii = 0; ii < num_layers; ii ++) {
-    printf("layer[%d]: ", ii);
-    for (int jj = 0; jj < num_nodes[ii]; jj ++) {
-      printf("%lf\t", derivatives_of_each_layer[ii][jj]);
-    }
-    printf("\n");
-  }
-  printf("\n");
-#endif
-  return;
-}
-
 void TorchANNFunc::calculate() {
 
-  vector<double> input_layer_data(num_nodes[0]);
-  for (int ii = 0; ii < num_nodes[0]; ii ++) {
-    input_layer_data[ii] = getArgument(ii);
+  vector<double> arg_vals(num_args);
+  for (int ii = 0; ii < num_args; ii ++) {
+    arg_vals[ii] = getArgument(ii);
   }
+  torch::Tensor arg_tensor = torch::from_blob(arg_vals.data(), num_args, torch::TensorOptions().dtype(torch::kFloat64).requires_grad(true));
+  vector<torch::jit::IValue> inputs = {arg_tensor};
+  auto outputs = module.forward(inputs).toTensor() ;
+  assert (num_outputs == outputs.size(0)) ;
+  outputs.backward();
+  torch::Tensor grad = arg_tensor.grad();
+  cout << "grad " << grad << endl ;
+  cout << "grad size: " << grad.sizes() << endl ;
 
-  calculate_output_of_each_layer(input_layer_data);
-  vector<vector<double> > derivatives_of_each_layer;
-
-  for (int ii = 0; ii < num_nodes[num_layers - 1]; ii ++) {
-    back_prop(derivatives_of_each_layer, ii);
-    string name_of_this_component = "node-" + to_string(ii);
-    Value* value_new=getPntrToComponent(name_of_this_component);
-    value_new -> set(output_of_each_layer[num_layers - 1][ii]);
-    for (int jj = 0; jj < num_nodes[0]; jj ++) {
-      value_new -> setDerivative(jj, derivatives_of_each_layer[0][jj]);  // TODO: setDerivative or addDerivative?
-    }
+  for (int ii = 0; ii < num_outputs ; ii ++) {
+    string name_of_component = "output-" + to_string(ii);
+    Value* value_new=getPntrToComponent(name_of_component);
+    value_new -> set(outputs[ii].item<double>());
+    for (int jj = 0; jj < num_args; jj ++) 
+      value_new -> setDerivative(jj, 1.0);  
   }
-
 }
 
 }
 }
 }
-
-
