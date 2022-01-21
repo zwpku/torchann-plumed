@@ -39,11 +39,11 @@ using namespace std;
 
 namespace PLMD {
 namespace function {
-namespace TorchANNFunc {
+namespace TorchANN {
 
-//+PLUMEDOC TORCHMOD_Function TORCHANNFUNC
+//+PLUMEDOC TORCHMOD_Function TORCHANN
 /*
-This module implements Torch ANN function class, which is a subclass of Function class.
+This module implements Torch ANN class, which is a subclass of Function class.
 
 \par Examples
 
@@ -51,10 +51,10 @@ The corresponding Torch ANN function object can be defined using following plume
 
 \plumedfile
 TORCHANN ...
-LABEL=TORCHANNFUNC
+LABEL=TORCHANN
 MODULE_FILE=file
 ARG=t0,t1
-... TORCHANNFUNC
+... TORCHANN
 \endplumedfile
 
 To access the components of outputs, use "TORCHANN.output-0", "TORCHANN.output-1", and so on.
@@ -62,7 +62,7 @@ To access the components of outputs, use "TORCHANN.output-0", "TORCHANN.output-1
 */
 //+ENDPLUMEDOC
 
-class TorchANNFunc : public Function
+class TorchANN: public Function
 {
 private:
   torch::jit::script::Module module;
@@ -72,13 +72,13 @@ private:
 
 public:
   static void registerKeywords( Keywords& keys );
-  explicit TorchANNFunc(const ActionOptions&);
+  explicit TorchANN(const ActionOptions&);
   void calculate();
 };
 
-PLUMED_REGISTER_ACTION(TorchANNFunc,"TORCHANNFUNC")
+PLUMED_REGISTER_ACTION(TorchANN,"TORCHANN")
 
-void TorchANNFunc::registerKeywords( Keywords& keys ) {
+void TorchANN::registerKeywords( Keywords& keys ) {
   Function::registerKeywords(keys);
   keys.use("ARG"); 
   keys.use("PERIODIC");
@@ -88,10 +88,11 @@ void TorchANNFunc::registerKeywords( Keywords& keys ) {
   keys.addOutputComponent("output", "default", "components of Torch ANN outputs");
 }
 
-TorchANNFunc::TorchANNFunc(const ActionOptions&ao):
+TorchANN::TorchANN(const ActionOptions&ao):
   Action(ao),
   Function(ao)
 {
+  // load the computing graph from file
   parse("MODULE_FILE", file);
   module = torch::jit::load(file);
 
@@ -111,27 +112,42 @@ TorchANNFunc::TorchANNFunc(const ActionOptions&ao):
   checkRead();
 }
 
-void TorchANNFunc::calculate() {
-
+void TorchANN::calculate() 
+{
   vector<double> arg_vals(num_args);
-  for (int ii = 0; ii < num_args; ii ++) {
-    arg_vals[ii] = getArgument(ii);
-  }
+  // obtain the values of the arguments
+  for (int i = 0; i < num_args; i ++) 
+    arg_vals[i] = getArgument(i);
+
+  // change to torch Tensor 
   torch::Tensor arg_tensor = torch::from_blob(arg_vals.data(), num_args, torch::TensorOptions().dtype(torch::kFloat64).requires_grad(true));
   vector<torch::jit::IValue> inputs = {arg_tensor};
+  // evaluate the value of function
   auto outputs = module.forward(inputs).toTensor() ;
+  
   assert (num_outputs == outputs.size(0)) ;
-  outputs.backward();
-  torch::Tensor grad = arg_tensor.grad();
-  cout << "grad " << grad << endl ;
-  cout << "grad size: " << grad.sizes() << endl ;
 
-  for (int ii = 0; ii < num_outputs ; ii ++) {
-    string name_of_component = "output-" + to_string(ii);
+  torch::Tensor grad ;
+
+  bool retain_graph = false ;
+  // keep the graph, if we need to backward multiple times
+  if (num_outputs > 1) retain_graph = true ;
+
+  for (int i = 0; i < num_outputs ; i ++) // loop through each component 
+  {
+    string name_of_component = "output-" + to_string(i);
     Value* value_new=getPntrToComponent(name_of_component);
-    value_new -> set(outputs[ii].item<double>());
-    for (int jj = 0; jj < num_args; jj ++) 
-      value_new -> setDerivative(jj, 1.0);  
+    value_new -> set(outputs[i].item<double>()); // set the value of ith component 
+    if (i > 0) 
+      // zero the gradient when there are more than one components, since otherwise it will accumulate.
+      grad = arg_tensor.grad().zero_();
+    // compute the derivaties by backward 
+    outputs[i].backward({}, retain_graph, false);
+    // access the gradient wrt the input tensor 
+    grad = arg_tensor.grad();
+    for (int j = 0; j < num_args; j ++) 
+      // set the gradient for each input component
+      value_new -> setDerivative(j, grad[j].item<double>());  
   }
 }
 
