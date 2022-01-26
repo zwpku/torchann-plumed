@@ -1,7 +1,7 @@
 Torch Artificial Neural Network (TorchANN) Function for plumed
 ====================
 
-This is a plugin for plumed which implements the `TorchANN` class as a subclass of `Function` class. It allows one to define functions in plumed that are represented by artificial neural networks. In contrast to the [`ANN`](https://www.plumed.org/doc-v2.6/user-doc/html/_a_n_n.html) function module, which only supports fully-connected feedforward neural networks, this plugin allows the use of more general neural network architectures. 
+This is a plugin for [plumed](https://www.plumed.org/download) which implements the `TorchANN` class as a subclass of `Function` class. It allows one to define functions in plumed that are represented by artificial neural networks. In contrast to the [`ANN`](https://www.plumed.org/doc-v2.6/user-doc/html/_a_n_n.html) function module, which only supports fully-connected feedforward neural networks, this plugin allows the use of more general neural network architectures. 
 
 ## Prerequiste
 - [plumed](https://www.plumed.org/download)
