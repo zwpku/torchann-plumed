@@ -1,6 +1,0 @@
-export LDFLAGS=-Wl,-rpath,/home/wei/miniconda3/envs/plumed-dev/libtorch/lib -L/home/wei/miniconda3/envs/plumed-dev/libtorch/lib
-export CXXFLAGS=-std=c++14 -D_GLIBCXX_USE_CXX11_ABI=1
-export LIBS=-ltorch -ltorch_cpu -lc10 -ltorch
-export CPPFLAGS='-I/home/wei/miniconda3/envs/plumed-dev/libtorch/include -I/home/wei/miniconda3/envs/plumed-dev/libtorch/include/torch/csrc/api/include'
-g++ -fPIC  BNN.cpp -shared -o BNN.so -I/home/wei/miniconda3/envs/plumed-dev/libtorch/include -I/home/wei/miniconda3/envs/plumed-dev/libtorch/include/torch/csrc/api/include -I/home/wei/local/include/plumed -L/home/wei/local/lib -lplumedKernel
-

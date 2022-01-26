@@ -67,7 +67,7 @@ class TorchANN: public Function
 private:
   torch::jit::script::Module module;
   string file;
-  int num_args ;
+  int num_args;
   int num_outputs;
 
 public:
