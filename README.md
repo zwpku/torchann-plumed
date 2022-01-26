@@ -32,11 +32,11 @@ Similar to [other plumed functions](https://www.plumed.org/doc-v2.5/user-doc/htm
 
 The output components can be accessed using `output-0`, `output-1`, and so on.
 
-## Examples
+## Example
 We give an example to show how to use this plugin with the OpenMM package.
 Suppose that both [OpenMM](http://openmm.org) and [its plugin to interface with Plumed](http://github.com/openmm/openmm-plumed) are installed.
 
-### Create the computational graph 
+### Step 1: Create the computational graph 
 
 ```python
 import torch
@@ -53,7 +53,7 @@ module = torch.jit.script(MyFunc())
 module.save('model.pt')
 ```
 
-### Use this plugin in OpenMM code
+### Step 2: Use this plugin in OpenMM code
 
 ```python
 plumed_script = """
