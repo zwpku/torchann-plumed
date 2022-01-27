@@ -1,7 +1,7 @@
 Torch Artificial Neural Network (TorchANN) Function for plumed
 ====================
 
-This is a plugin for [plumed](https://www.plumed.org/download) which implements the `TorchANN` class as a subclass of `Function` class. It allows one to define functions in plumed that are represented by artificial neural networks. In contrast to the [`ANN`](https://www.plumed.org/doc-v2.6/user-doc/html/_a_n_n.html) function module, which only supports fully-connected feedforward neural networks, this plugin allows the use of more general neural network architectures. 
+This is a plugin for [plumed](https://www.plumed.org/download) which implements the `TorchANN` class as a subclass of `Function` class. It allows one to define functions in plumed that are represented by artificial neural networks. In contrast to the [`ANN`](https://www.plumed.org/doc-v2.6/user-doc/html/_a_n_n.html) function module, which only supports fully-connected feedforward neural networks, this plugin allows the use of general neural network architectures. 
 
 ## Prerequiste
 - [plumed](https://www.plumed.org/download)
@@ -9,14 +9,14 @@ This is a plugin for [plumed](https://www.plumed.org/download) which implements 
 
 ## Installation
 This plugin uses [CMake](http://cmake.org) as its build system. Once you are in the directory containing files of this package, follow these steps to install it:
-1. Create the directory in which to build the plugin: mkdir ./build
-2. In ./build directory run ccmake ../, and set the following variables.
+1. Create the directory in which to build the plugin: *mkdir ./build*
+2. In `./build` directory run *ccmake ../*, and set the following variables.
   * set `Torch_DIR` to point to the directory where LibTorch is installed (it is typically `/path-to-libtorch/share/cmake/Torch`); 
   * set `PlUMED_INC_DIR` to point to the directory which contains the header files of plumed;
   * set `PLUMED` to point to the directory which contains the library files of plumed, i.e. libplumedKernel.so;
   * set `CMAKE_INSTALL_PREFIX` to point to the directory where the plugin (i.e. the library file `libTorchANNPlumed.so`) will be installed.
-3. Build: `make`
-4. Install: `make install`
+3. Build: *make*
+4. Install: *make install*
 
 ## Usage
 
@@ -33,7 +33,7 @@ Similar to [other plumed functions](https://www.plumed.org/doc-v2.5/user-doc/htm
 The output components can be accessed using `output-0`, `output-1`, and so on.
 
 ## Example
-We give an example to show how to use this plugin with the OpenMM package.
+Below is an example which shows how to use this plugin with the OpenMM package.
 Suppose that both [OpenMM](http://openmm.org) and [its plugin to interface with Plumed](http://github.com/openmm/openmm-plumed) are installed.
 
 ### Step 1: Create the computational graph 
@@ -42,6 +42,7 @@ Suppose that both [OpenMM](http://openmm.org) and [its plugin to interface with 
 import torch
 import numpy as np
 
+# The user-defined neural network function
 class MyFunc(torch.nn.Module):
     def forward(self, positions):
         return torch.cat((torch.sum(positions**2).reshape((1)), torch.mean(positions).reshape((1))), 0)

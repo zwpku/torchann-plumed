@@ -138,16 +138,22 @@ void TorchANN::calculate()
     string name_of_component = "output-" + to_string(i);
     Value* value_new=getPntrToComponent(name_of_component);
     value_new -> set(outputs[i].item<double>()); // set the value of ith component 
-    if (i > 0) 
+    if ((i > 0) && (arg_tensor.grad().defined())) 
       // zero the gradient when there are more than one components, since otherwise it will accumulate.
       grad = arg_tensor.grad().zero_();
-    // compute the derivaties by backward 
+    // compute the derivatives 
     outputs[i].backward({}, retain_graph, false);
     // access the gradient wrt the input tensor 
-    grad = arg_tensor.grad();
-    for (int j = 0; j < num_args; j ++) 
-      // set the gradient for each input component
-      value_new -> setDerivative(j, grad[j].item<double>());  
+    if (arg_tensor.grad().defined())
+    {
+      grad = arg_tensor.grad();
+      for (int j = 0; j < num_args; j ++) 
+	// set the gradient for each input component
+	value_new -> setDerivative(j, grad[j].item<double>());  
+    } else { // if the grad tensor is undefined, set the gradient to zero 
+      for (int j = 0; j < num_args; j ++) 
+	value_new -> setDerivative(j, 0.0);  
+    }
   }
 }
 
