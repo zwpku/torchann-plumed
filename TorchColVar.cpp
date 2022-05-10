@@ -22,13 +22,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
 
-#include "function/Function.h"
-#include "function/ActionRegister.h"
+#include "colvar/Colvar.h"
+#include "colvar/ActionRegister.h"
 #include "cassert"
 
 #include <string>
 #include <cmath>
 #include <iostream>
+#include <cassert>
 
 #include <torch/torch.h>
 #include <torch/script.h>
@@ -38,69 +39,62 @@ using namespace std;
 // #define DEBUG
 
 namespace PLMD {
-namespace function {
-namespace TorchANN {
+namespace colvar {
 
-//+PLUMEDOC TORCHMOD_Function TORCHANN
+//+PLUMEDOC TORCHMOD_Function TORCHCOLVAR
 /*
-This module implements Torch ANN class, which is a subclass of Function class.
+This module implements Torch ColVar class, which is a subclass of ColVar class.
 
-\par Examples
-
-The corresponding Torch ANN function object can be defined using following plumed script:
-
-\plumedfile
-TORCHANN ...
-LABEL=TORCHANN
-MODULE_FILE=file
-ARG=t0,t1
-... TORCHANN
-\endplumedfile
-
-To access the components of outputs, use "TORCHANN.output-0", "TORCHANN.output-1", and so on.
+To access the components of outputs, use "*.output-0", "*.output-1", and so on.
 
 */
 //+ENDPLUMEDOC
 
-class TorchANN: public Function
-{
+class TorchColVar: public Colvar {
 private:
   torch::jit::script::Module module;
   string file;
-  int num_args;
   int num_outputs;
 
 public:
   static void registerKeywords( Keywords& keys );
-  explicit TorchANN(const ActionOptions&);
+  explicit TorchColVar(const ActionOptions&);
   void calculate();
 };
 
-PLUMED_REGISTER_ACTION(TorchANN,"TORCHANN")
+PLUMED_REGISTER_ACTION(TorchColVar,"TORCHCOLVAR")
 
-void TorchANN::registerKeywords( Keywords& keys ) {
-  Function::registerKeywords(keys);
-  keys.use("ARG"); 
-  keys.use("PERIODIC");
+void TorchColVar::registerKeywords( Keywords& keys ) {
+  Colvar::registerKeywords(keys);
   keys.add("compulsory", "MODULE_FILE", "file which stores a pytorch compute graph");
-  keys.add("compulsory", "NUM_OUTPUT", "number of components of Torch ANN outputs");
+  keys.add("compulsory", "NUM_OUTPUT", "number of components of Torch ColVar outputs");
   // since v2.2 plumed requires all components be registered
-  keys.addOutputComponent("output", "default", "components of Torch ANN outputs");
+  keys.addOutputComponent("output", "default", "components of Torch ColVar outputs");
 }
 
-TorchANN::TorchANN(const ActionOptions&ao):
-  Action(ao),
-  Function(ao)
+TorchColVar::TorchColVar(const ActionOptions&ao):
+PLUMED_COLVAR_INIT(ao)
 {
+  std::vector<AtomNumber> atoms;
+
+  int nat;
+  // use coordinates of all atoms 
+  nat = getTotAtoms();
+  for (unsigned int i = 0 ; i < ((unsigned int) nat); i ++)
+  {
+    AtomNumber ati;
+    ati.setIndex(i);
+    atoms.push_back(ati);
+  }
+
   // load the computing graph from file
   parse("MODULE_FILE", file);
   module = torch::jit::load(file);
 
-  num_args = getNumberOfArguments() ;
   parse("NUM_OUTPUT", num_outputs);
 
   log.printf("MODULE_FILE =%s\n", file.c_str());
-  log.printf("Number of args: %d\n", num_args) ;
+  log.printf("Number of atoms: %d\n", atoms.size()) ;
   log.printf("NUM_OUTPUT=%d\n", num_outputs) ;
   log.printf("Initialization ended\n");
   // create components
@@ -110,18 +104,18 @@ TorchANN::TorchANN(const ActionOptions&ao):
     componentIsNotPeriodic(name_of_component);
   }
   checkRead();
+  requestAtoms(atoms);
 }
 
-void TorchANN::calculate() 
+void TorchColVar::calculate() 
 {
-  vector<double> arg_vals(num_args);
   // obtain the values of the arguments
-  for (int i = 0; i < num_args; i ++) 
-    arg_vals[i] = getArgument(i);
+  std::vector<Vector> pos = getPositions();
 
   // change to torch Tensor 
-  torch::Tensor arg_tensor = torch::from_blob(arg_vals.data(), num_args, torch::TensorOptions().dtype(torch::kFloat64).requires_grad(true));
+  torch::Tensor arg_tensor = torch::from_blob(&(pos[0][0]), {getTotAtoms(),3}, torch::TensorOptions().dtype(torch::kFloat64).requires_grad(true));
   vector<torch::jit::IValue> inputs = {arg_tensor};
+
   // evaluate the value of function
   auto outputs = module.forward(inputs).toTensor() ;
   
@@ -140,23 +134,31 @@ void TorchANN::calculate()
     value_new -> set(outputs[i].item<double>()); // set the value of ith component 
     if ((i > 0) && (arg_tensor.grad().defined())) 
       // zero the gradient when there are more than one components, since otherwise it will accumulate.
-      grad = arg_tensor.grad().zero_();
+      arg_tensor.grad().zero_();
     // compute the derivatives 
     outputs[i].backward({}, retain_graph, false);
     // access the gradient wrt the input tensor 
     if (arg_tensor.grad().defined())
     {
       grad = arg_tensor.grad();
-      for (int j = 0; j < num_args; j ++) 
+      for (int j = 0; j < getTotAtoms(); j ++) 
 	// set the gradient for each input component
-	value_new -> setDerivative(j, grad[j].item<double>());  
+      {
+	value_new -> setDerivative(3*j, grad[j][0].item<double>());  
+	value_new -> setDerivative(3*j+1, grad[j][1].item<double>());  
+	value_new -> setDerivative(3*j+2, grad[j][2].item<double>());  
+      }
     } else { // if the grad tensor is undefined, set the gradient to zero 
-      for (int j = 0; j < num_args; j ++) 
-	value_new -> setDerivative(j, 0.0);  
+      for (int j = 0; j < getTotAtoms(); j ++) 
+      {
+	value_new -> setDerivative(3*j, 0.0);  
+	value_new -> setDerivative(3*j+1, 0.0);  
+	value_new -> setDerivative(3*j+2, 0.0);  
+      }
     }
   }
-}
 
+  setBoxDerivativesNoPbc();
 }
 }
 }
