@@ -1,4 +1,4 @@
-Torch artificial neural network (TorchANN) for PLUMED
+Torch artificial neural networks (TorchANNs) for PLUMED
 ====================
 
 This is a plugin for [PLUMED](https://www.plumed.org/download) that implements the `TorchFunc` class as a subclass of `Function` class and the `TorchColVar` class as a subclass of `ColVar` class. It allows one to define functions and collective variables (ColVars) in PLUMED that are represented by artificial neural networks. In contrast to the [`ANN`](https://www.plumed.org/doc-v2.6/user-doc/html/_a_n_n.html) function module that supports fully-connected feedforward neural networks, this plugin allows the use of general neural network architectures. 
@@ -43,7 +43,7 @@ The output components can be accessed using `output-0`, `output-1`, and so on.
 Below is an example that shows how to use this plugin with the OpenMM package.
 Suppose that both [OpenMM](http://openmm.org) and [its plugin to interface with PLUMED](http://github.com/openmm/openmm-plumed) are installed.
 
-### Step 1: Create the computational graph 
+### Step 1: Create the computational graphs 
 
 ```python
 import torch
