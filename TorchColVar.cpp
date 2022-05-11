@@ -113,12 +113,13 @@ void TorchColVar::calculate()
   std::vector<Vector> pos = getPositions();
 
   // change to torch Tensor 
-  torch::Tensor arg_tensor = torch::from_blob(&(pos[0][0]), {getTotAtoms(),3}, torch::TensorOptions().dtype(torch::kFloat64).requires_grad(true));
-  vector<torch::jit::IValue> inputs = {arg_tensor};
+  torch::Tensor arg_tensor = torch::from_blob(&(pos[0][0]), {1, getTotAtoms(),3}, torch::TensorOptions().dtype(torch::kFloat64).requires_grad(true));
+
+  vector<torch::jit::IValue> inputs = {arg_tensor.to(torch::kFloat32)};
 
   // evaluate the value of function
-  auto outputs = module.forward(inputs).toTensor() ;
-  
+  auto outputs = module.forward(inputs).toTensor()[0] ;
+
   assert (num_outputs == outputs.size(0)) ;
 
   torch::Tensor grad ;
@@ -140,7 +141,7 @@ void TorchColVar::calculate()
     // access the gradient wrt the input tensor 
     if (arg_tensor.grad().defined())
     {
-      grad = arg_tensor.grad();
+      grad = arg_tensor.grad()[0];
       for (int j = 0; j < getTotAtoms(); j ++) 
 	// set the gradient for each input component
       {
